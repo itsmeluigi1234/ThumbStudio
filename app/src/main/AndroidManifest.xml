@@ -1,12 +1,11 @@
 
-<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
         android:allowBackup="true"
         android:label="ThumbStudio"
-        android:supportsRtl="true"
-        android:theme="@style/AppTheme">
+        android:theme="@style/AppTheme"
+        android:supportsRtl="true">
 
         <activity
             android:name=".MainActivity"
@@ -18,7 +17,7 @@
             </intent-filter>
 
         </activity>
+
     </application>
 
 </manifest>
-  
