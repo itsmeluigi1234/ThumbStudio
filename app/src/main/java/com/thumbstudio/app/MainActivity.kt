@@ -63,7 +63,7 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.GRAY)
             textSize = 16f
-            singleLine = true
+            maxlines = 1
             setPadding(dp(12), 0, dp(12), 0)
             setBackgroundColor(Color.rgb(35, 34, 49))
         }
