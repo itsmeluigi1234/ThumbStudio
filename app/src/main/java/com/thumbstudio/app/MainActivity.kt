@@ -2,300 +2,391 @@
 package com.thumbstudio.app
 
 import android.app.Activity
+import android.os.Bundle
 import android.content.ContentValues
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Typeface
+import android.graphics.*
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
-import android.os.Environment
 import android.provider.MediaStore
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.EditText
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : Activity() {
 
     private lateinit var preview: ImageView
     private lateinit var titleInput: EditText
-    private var backgroundBitmap: Bitmap? = null
+    private lateinit var subtitleInput: EditText
 
-    companion object {
-        private const val PICK_IMAGE = 1001
-    }
+    private var backgroundBitmap: Bitmap? = null
+    private var backgroundColor = Color.rgb(91, 45, 190)
+    private var textColor = Color.WHITE
+    private var fontSize = 100f
+
+    private var titleX = 0.5f
+    private var titleY = 0.46f
+    private var subtitleX = 0.5f
+    private var subtitleY = 0.68f
+
+    private var dragTitle = true
+    private var downX = 0f
+    private var downY = 0f
+    private var startX = 0f
+    private var startY = 0f
+
+    private val imagePicker =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            uri?.let {
+                try {
+                    contentResolver.openInputStream(it)?.use { stream ->
+                        backgroundBitmap = BitmapFactory.decodeStream(stream)
+                    }
+                    refreshPreview()
+                } catch (_: Exception) {
+                    toast("Couldn't load that image")
+                }
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.statusBarColor = Color.rgb(16, 16, 24)
-        window.navigationBarColor = Color.rgb(16, 16, 24)
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 20, 20, 20)
-            setBackgroundColor(Color.rgb(16, 16, 24))
-        }
-
-        val scroll = ScrollView(this)
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 18)
+            setBackgroundColor(Color.rgb(18, 18, 26))
         }
 
         val heading = TextView(this).apply {
             text = "ThumbStudio"
-            textSize = 30f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+            textSize = 28f
+            setTextColor(Color.rgb(255, 210, 40))
+            gravity = Gravity.CENTER
+            setPadding(0, 8, 0, 4)
         }
-        content.addView(heading)
+        root.addView(heading)
 
-        val subtitle = TextView(this).apply {
-            text = "Create your next Roblox thumbnail"
-            textSize = 14f
+        val info = TextView(this).apply {
+            text = "CREATE YOUR NEXT THUMBNAIL"
+            textSize = 12f
+            gravity = Gravity.CENTER
             setTextColor(Color.LTGRAY)
-            setPadding(0, 4, 0, 20)
+            setPadding(0, 0, 0, 14)
         }
-        content.addView(subtitle)
-
-        // Initialize the title before creating the preview.
-        titleInput = EditText(this).apply {
-            hint = "Enter thumbnail title"
-            setText("MY ROBLOX GAME")
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.LTGRAY)
-            textSize = 20f
-            maxLines = 1
-            setSingleLine(true)
-        }
-        content.addView(titleInput)
+        root.addView(info)
 
         preview = ImageView(this).apply {
-            setBackgroundColor(Color.rgb(42, 35, 70))
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            adjustViewBounds = true
-            minimumHeight = 200
-            setImageBitmap(createPreview())
+            scaleType = ImageView.ScaleType.FIT_XY
+            setBackgroundColor(Color.DKGRAY)
+            contentDescription = "Thumbnail preview. Drag to move the title."
         }
 
-        content.addView(
+        root.addView(
             preview,
             LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 220
-            )
-        )
-
-        addButton(content, "Import Background Image") {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                type = "image/*"
-                addCategory(Intent.CATEGORY_OPENABLE)
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            ).apply {
+                bottomMargin = 12
             }
-            startActivityForResult(intent, PICK_IMAGE)
-        }
-
-        addButton(content, "Update Preview") {
-            preview.setImageBitmap(createPreview())
-        }
-
-        addButton(content, "Export Thumbnail") {
-            exportThumbnail()
-        }
-
-        scroll.addView(content)
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-            )
         )
 
-        setContentView(root)
-    }
+        preview.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    startX = if (dragTitle) titleX else subtitleX
+                    startY = if (dragTitle) titleY else subtitleY
+                    true
+                }
 
-    private fun addButton(
-        parent: LinearLayout,
-        label: String,
-        action: () -> Unit
-    ) {
-        val button = Button(this).apply {
-            text = label
-            isAllCaps = false
-            setOnClickListener {
-                try {
-                    action()
-                } catch (e: Exception) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Error: ${e.message ?: "Unknown error"}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                MotionEvent.ACTION_MOVE -> {
+                    if (preview.width > 0 && preview.height > 0) {
+                        val newX = (startX +
+                            (event.x - downX) / preview.width).coerceIn(0.05f, 0.95f)
+                        val newY = (startY +
+                            (event.y - downY) / preview.height).coerceIn(0.05f, 0.95f)
+
+                        if (dragTitle) {
+                            titleX = newX
+                            titleY = newY
+                        } else {
+                            subtitleX = newX
+                            subtitleY = newY
+                        }
+                        refreshPreview()
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP -> true
+                else -> true
+            }
+        }
+
+        titleInput = editField("YOUR EPIC TITLE")
+        root.addView(titleInput)
+
+        subtitleInput = editField("Add a subtitle...")
+        root.addView(subtitleInput)
+
+        titleInput.addTextChangedListener(SimpleWatcher { refreshPreview() })
+        subtitleInput.addTextChangedListener(SimpleWatcher { refreshPreview() })
+
+        root.addView(label("TEMPLATES"))
+        root.addView(buttonRow(
+            listOf("Roblox", "Minecraft", "YouTube")
+        ) { choice ->
+            when (choice) {
+                "Roblox" -> {
+                    titleInput.setText("ROBLOX")
+                    subtitleInput.setText("NEW ADVENTURE!")
+                    backgroundColor = Color.rgb(205, 40, 40)
+                    textColor = Color.WHITE
+                    fontSize = 100f
+                }
+                "Minecraft" -> {
+                    titleInput.setText("MINECRAFT")
+                    subtitleInput.setText("LET'S PLAY!")
+                    backgroundColor = Color.rgb(48, 135, 65)
+                    textColor = Color.rgb(255, 240, 110)
+                    fontSize = 90f
+                }
+                else -> {
+                    titleInput.setText("NEW VIDEO!")
+                    subtitleInput.setText("WATCH NOW")
+                    backgroundColor = Color.rgb(30, 90, 210)
+                    textColor = Color.WHITE
+                    fontSize = 100f
                 }
             }
-        }
+            refreshPreview()
+        })
 
-        parent.addView(
-            button,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
+        root.addView(label("BACKGROUND COLOR"))
+        root.addView(buttonRow(
+            listOf("Purple", "Blue", "Red", "Green")
+        ) {
+            backgroundBitmap = null
+            backgroundColor = when (it) {
+                "Purple" -> Color.rgb(91, 45, 190)
+                "Blue" -> Color.rgb(30, 90, 210)
+                "Red" -> Color.rgb(205, 40, 40)
+                else -> Color.rgb(35, 135, 65)
+            }
+            refreshPreview()
+        })
+
+        root.addView(label("TEXT COLOR"))
+        root.addView(buttonRow(
+            listOf("White", "Yellow", "Cyan", "Pink")
+        ) {
+            textColor = when (it) {
+                "White" -> Color.WHITE
+                "Yellow" -> Color.YELLOW
+                "Cyan" -> Color.CYAN
+                else -> Color.rgb(255, 105, 180)
+            }
+            refreshPreview()
+        })
+
+        root.addView(buttonRow(listOf("−  Smaller", "+  Bigger")) {
+            fontSize = (fontSize + if (it.startsWith("+")) 10f else -10f)
+                .coerceIn(35f, 180f)
+            refreshPreview()
+        })
+
+        root.addView(buttonRow(listOf("Move Title", "Move Subtitle")) {
+            dragTitle = it == "Move Title"
+            toast(if (dragTitle) "Drag the title in the preview"
+            else "Drag the subtitle in the preview")
+        })
+
+        root.addView(buttonRow(listOf("Import Background", "Export PNG")) {
+            when (it) {
+                "Import Background" -> imagePicker.launch("image/*")
+                "Export PNG" -> exportPng()
+            }
+        })
+
+        setContentView(root)
+        refreshPreview()
     }
 
-    private fun createPreview(): Bitmap {
-        val width = 1280
-        val height = 720
+    private fun editField(hintText: String): EditText {
+        return EditText(this).apply {
+            hint = hintText
+            textSize = 16f
+            setSingleLine(true)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            setPadding(12, 2, 12, 2)
+            setBackgroundColor(Color.rgb(39, 39, 51))
+        }
+    }
 
+    private fun label(value: String): TextView {
+        return TextView(this).apply {
+            text = value
+            textSize = 12f
+            setTextColor(Color.LTGRAY)
+            setPadding(2, 8, 2, 4)
+        }
+    }
+
+    private fun buttonRow(
+        names: List<String>,
+        action: (String) -> Unit
+    ): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            names.forEach { name ->
+                val button = Button(this@MainActivity).apply {
+                    text = name
+                    textSize = 11f
+                    isAllCaps = false
+                    setOnClickListener { action(name) }
+                }
+                addView(
+                    button,
+                    LinearLayout.LayoutParams(0, 46, 1f).apply {
+                        setMargins(2, 1, 2, 1)
+                    }
+                )
+            }
+        }
+    }
+
+    private fun refreshPreview() {
+        if (!::preview.isInitialized) return
+        val bitmap = renderThumbnail(640, 360)
+        val old = preview.drawable
+        preview.setImageBitmap(bitmap)
+        if (old is android.graphics.drawable.BitmapDrawable) {
+            val oldBitmap = old.bitmap
+            if (oldBitmap !== bitmap && !oldBitmap.isRecycled) {
+                oldBitmap.recycle()
+            }
+        }
+    }
+
+    private fun renderThumbnail(width: Int, height: Int): Bitmap {
         val bitmap = Bitmap.createBitmap(
             width, height, Bitmap.Config.ARGB_8888
         )
         val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.rgb(42, 35, 70))
 
-        backgroundBitmap?.let {
-            val source = Bitmap.createScaledBitmap(it, width, height, true)
-            canvas.drawBitmap(
-                source, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG)
-            )
-            if (source !== it) source.recycle()
-        }
+        canvas.drawColor(backgroundColor)
 
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = 100f
-            typeface = Typeface.create(
-                "sans-serif-black", Typeface.BOLD
-            )
-            textAlign = Paint.Align.CENTER
-            setShadowLayer(8f, 4f, 4f, Color.BLACK)
+        backgroundBitmap?.let { bg ->
+            val source = Rect(0, 0, bg.width, bg.height)
+            val destination = Rect(0, 0, width, height)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            canvas.drawBitmap(bg, source, destination, paint)
         }
 
         val title = titleInput.text.toString()
-            .ifBlank { "MY ROBLOX GAME" }
-            .uppercase()
-            .take(24)
+        val subtitle = subtitleInput.text.toString()
 
-        canvas.drawText(title, width / 2f, height * 0.82f, paint)
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = textColor
+            textSize = fontSize * width / 1280f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
+            style = Paint.Style.FILL
+        }
+
+        val outline = Paint(titlePaint).apply {
+            color = Color.BLACK
+            style = Paint.Style.STROKE
+            strokeWidth = maxOf(3f, titlePaint.textSize * 0.07f)
+            strokeJoin = Paint.Join.ROUND
+        }
+
+        val x = titleX * width
+        val y = titleY * height
+
+        canvas.drawText(title, x, y, outline)
+        canvas.drawText(title, x, y, titlePaint)
+
+        val subPaint = Paint(titlePaint).apply {
+            textSize = titlePaint.textSize * 0.42f
+        }
+        val subOutline = Paint(outline).apply {
+            textSize = subPaint.textSize
+            strokeWidth = maxOf(2f, subPaint.textSize * 0.07f)
+        }
+
+        canvas.drawText(
+            subtitle, subtitleX * width, subtitleY * height, subOutline
+        )
+        canvas.drawText(
+            subtitle, subtitleX * width, subtitleY * height, subPaint
+        )
+
         return bitmap
     }
 
-    @Deprecated("Uses the classic Android image picker callback")
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == PICK_IMAGE && resultCode == RESULT_OK) {
-            val uri: Uri = data?.data ?: return
-
-            try {
-                val bitmap = contentResolver.openInputStream(uri)?.use {
-                    BitmapFactory.decodeStream(it)
-                }
-
-                if (bitmap == null) {
-                    Toast.makeText(
-                        this, "Couldn't read that image",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return
-                }
-
-                backgroundBitmap?.recycle()
-                backgroundBitmap = bitmap
-                preview.setImageBitmap(createPreview())
-
-                Toast.makeText(
-                    this, "Image imported!", Toast.LENGTH_SHORT
-                ).show()
-            } catch (_: Exception) {
-                Toast.makeText(
-                    this, "Couldn't open that image",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
-
-    private fun exportThumbnail() {
-        val bitmap = createPreview()
-        var savedUri: Uri? = null
-
+    private fun exportPng() {
         try {
-            val filename =
-                "ThumbStudio-${System.currentTimeMillis()}.jpg"
+            val bitmap = renderThumbnail(1280, 720)
+            val filename = "ThumbStudio_${System.currentTimeMillis()}.png"
 
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(
                         MediaStore.Images.Media.RELATIVE_PATH,
-                        "${Environment.DIRECTORY_PICTURES}/ThumbStudio"
+                        "Pictures/ThumbStudio"
                     )
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
             }
 
-            savedUri = contentResolver.insert(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                values
-            ) ?: throw Exception("Couldn't create gallery file")
+            val uri = contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
+            ) ?: throw Exception("Could not create image")
 
-            val output = contentResolver.openOutputStream(savedUri)
-                ?: throw Exception("Couldn't open output file")
-
-            output.use {
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it)) {
-                    throw Exception("Couldn't encode thumbnail")
+            contentResolver.openOutputStream(uri)?.use { stream ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
+                    throw Exception("PNG export failed")
                 }
-            }
+            } ?: throw Exception("Could not open image output")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val completed = ContentValues().apply {
+                val finish = ContentValues().apply {
                     put(MediaStore.Images.Media.IS_PENDING, 0)
                 }
-                contentResolver.update(savedUri, completed, null, null)
+                contentResolver.update(uri, finish, null, null)
             }
 
-            Toast.makeText(
-                this,
-                "Thumbnail saved to Pictures/ThumbStudio!",
-                Toast.LENGTH_LONG
-            ).show()
-        } catch (e: Exception) {
-            savedUri?.let {
-                try {
-                    contentResolver.delete(it, null, null)
-                } catch (_: Exception) {
-                }
-            }
-
-            Toast.makeText(
-                this,
-                "Export failed: ${e.message ?: "Unknown error"}",
-                Toast.LENGTH_LONG
-            ).show()
-        } finally {
             bitmap.recycle()
+            toast("PNG saved to Pictures/ThumbStudio!")
+        } catch (e: Exception) {
+            toast("Export failed: ${e.message}")
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        backgroundBitmap?.recycle()
-        backgroundBitmap = null
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private class SimpleWatcher(
+        private val changed: () -> Unit
+    ) : android.text.TextWatcher {
+        override fun beforeTextChanged(
+            s: CharSequence?, start: Int, count: Int, after: Int
+        ) {}
+        override fun onTextChanged(
+            s: CharSequence?, start: Int, before: Int, count: Int
+        ) {
+            changed()
+        }
+        override fun afterTextChanged(s: android.text.Editable?) {}
     }
 }
