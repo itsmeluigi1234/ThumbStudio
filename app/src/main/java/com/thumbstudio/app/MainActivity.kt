@@ -1,7 +1,7 @@
 
 package com.thumbstudio.app
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.os.Bundle
 import android.content.ContentValues
 import android.content.Intent
@@ -15,7 +15,7 @@ import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
 
     private lateinit var preview: ImageView
     private lateinit var titleInput: EditText
